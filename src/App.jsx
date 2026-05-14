@@ -32,7 +32,7 @@ import {
   PieChart
 } from 'lucide-react';
 
-// --- ВАШІ КОНФІГУРАЦІЇ FIREBASE ---
+// --- КОНФІГУРАЦІЯ FIREBASE ---
 const firebaseConfig = {
   apiKey: "AIzaSyCQlVRv6EL9R6Od2VgdXBoi3OQ9p5M9Bds",
   authDomain: "skarbnychka-ddb6a.firebaseapp.com",
