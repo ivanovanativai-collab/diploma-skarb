@@ -27,7 +27,9 @@ import {
   Trash2, 
   History,
   LayoutDashboard,
-  Tags
+  Tags,
+  Calendar,
+  PieChart
 } from 'lucide-react';
 
 // --- ВАШІ КОНФІГУРАЦІЇ FIREBASE ---
@@ -56,9 +58,10 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [amount, setAmount] = useState('');
   
-  // Нові стани для розумної форми
+  // Стани для розумної форми
   const [transactionType, setTransactionType] = useState('expense');
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]); // Додано вибір дати
   
   const [loading, setLoading] = useState(true);
 
@@ -75,6 +78,7 @@ export default function App() {
 
     const q = query(
       collection(db, 'artifacts', 'skarbnychka', 'users', user.uid, 'transactions'),
+      orderBy('date', 'desc'), // Тепер сортуємо за обраною датою
       orderBy('createdAt', 'desc')
     );
 
@@ -91,7 +95,6 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // Зміна типу транзакції (оновлює список категорій)
   const handleTypeChange = (type) => {
     setTransactionType(type);
     setCategory(type === 'expense' ? EXPENSE_CATEGORIES[0] : INCOME_CATEGORIES[0]);
@@ -108,17 +111,17 @@ export default function App() {
   const handleLogout = () => signOut(auth);
 
   const addTransaction = async () => {
-    if (!amount || !category) return;
+    if (!amount || !category || !date) return;
 
     try {
       await addDoc(collection(db, 'artifacts', 'skarbnychka', 'users', user.uid, 'transactions'), {
         amount: parseFloat(amount),
-        description: category, // Тепер опис - це обрана категорія
+        description: category,
         type: transactionType,
+        date: date, // Зберігаємо обрану користувачем дату
         createdAt: serverTimestamp()
       });
       setAmount('');
-      // Категорію не скидаємо для зручності швидкого вводу
     } catch (error) {
       console.error("Помилка при додаванні запису:", error);
     }
@@ -132,10 +135,27 @@ export default function App() {
     }
   };
 
+  // --- ОБЧИСЛЕННЯ АНАЛІТИКИ ---
   const totalBalance = transactions.reduce((acc, curr) => {
     return curr.type === 'income' ? acc + curr.amount : acc - curr.amount;
   }, 0);
 
+  const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((a, b) => a + b.amount, 0);
+  
+  // Рахуємо суми по категоріях витрат
+  const expenseByCategory = transactions
+    .filter(t => t.type === 'expense')
+    .reduce((acc, curr) => {
+      acc[curr.description] = (acc[curr.description] || 0) + curr.amount;
+      return acc;
+    }, {});
+
+  // Беремо Топ-3 найбільших витрат
+  const topExpenses = Object.entries(expenseByCategory)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 4);
+
+  // --- ЕКРАНИ ---
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-emerald-50">
@@ -168,18 +188,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-emerald-50 pb-20 font-sans">
-      <header className="bg-emerald-600 text-white p-8 rounded-b-[3.5rem] shadow-xl mb-8">
-        <div className="max-w-md mx-auto flex justify-between items-center mb-10">
+      {/* Шапка */}
+      <header className="bg-emerald-600 text-white p-8 rounded-b-[3.5rem] shadow-xl mb-8 relative overflow-hidden">
+        <div className="absolute top-[-20px] right-[-20px] w-40 h-40 bg-emerald-500 rounded-full opacity-20"></div>
+        <div className="max-w-md mx-auto flex justify-between items-center mb-10 relative z-10">
           <div className="flex items-center gap-3">
-            <Wallet size={24} />
+            <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">
+                <Wallet size={24} />
+            </div>
             <span className="font-black text-xl uppercase tracking-tighter">Скарбничка</span>
           </div>
-          <button onClick={handleLogout} className="bg-white/20 p-2.5 rounded-xl hover:bg-white/30 transition-colors">
+          <button onClick={handleLogout} className="bg-white/20 p-2.5 rounded-xl hover:bg-white/30 transition-colors backdrop-blur-md">
             <LogOut size={22} />
           </button>
         </div>
 
-        <div className="max-w-md mx-auto text-center pb-4">
+        <div className="max-w-md mx-auto text-center pb-4 relative z-10">
           <p className="text-emerald-100 text-xs mb-2 uppercase tracking-widest font-bold">Ваш баланс</p>
           <h2 className="text-6xl font-black mb-8 tracking-tight">
             {totalBalance.toLocaleString()} <span className="text-3xl font-light text-emerald-200">₴</span>
@@ -192,14 +216,15 @@ export default function App() {
             </div>
             <div className="bg-white/10 backdrop-blur-lg p-4 rounded-[2rem] flex flex-col items-center flex-1 border border-white/20">
               <TrendingDown className="text-rose-300 mb-1" size={24} />
-              <span className="font-black text-lg">-{transactions.filter(t => t.type === 'expense').reduce((a, b) => a + b.amount, 0).toLocaleString()}</span>
+              <span className="font-black text-lg">-{totalExpenses.toLocaleString()}</span>
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-md mx-auto px-5">
-        <div className="bg-white p-7 rounded-[2.5rem] shadow-xl mb-10 border border-emerald-100/50">
+        {/* Форма */}
+        <div className="bg-white p-7 rounded-[2.5rem] shadow-xl shadow-emerald-900/5 mb-10 border border-emerald-100/50">
           <h3 className="text-gray-800 font-black text-xl mb-6 flex items-center gap-3">
             <PlusCircle className="text-emerald-500" size={24} />
             Нова операція
@@ -222,6 +247,7 @@ export default function App() {
               </button>
             </div>
 
+            {/* Сума */}
             <div className="relative">
                 <input 
                     type="number" 
@@ -233,24 +259,35 @@ export default function App() {
                 <span className="absolute left-5 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xl">₴</span>
             </div>
 
-            {/* Розумний випадаючий список */}
-            <div className="relative">
-                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-emerald-600">
-                  <Tags size={20} />
+            <div className="grid grid-cols-2 gap-3">
+                {/* Категорія */}
+                <div className="relative col-span-1">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-600">
+                      <Tags size={18} />
+                    </div>
+                    <select 
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full bg-emerald-50 border-2 border-transparent rounded-2xl p-4 pl-10 focus:border-emerald-500 outline-none font-bold text-gray-700 text-sm transition-all appearance-none cursor-pointer"
+                    >
+                      {transactionType === 'expense' 
+                        ? EXPENSE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)
+                        : INCOME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)
+                      }
+                    </select>
                 </div>
-                <select 
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-emerald-50 border-2 border-transparent rounded-2xl p-5 pl-12 focus:border-emerald-500 outline-none font-bold text-gray-700 transition-all appearance-none cursor-pointer"
-                >
-                  {transactionType === 'expense' 
-                    ? EXPENSE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)
-                    : INCOME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)
-                  }
-                </select>
-                {/* Стрілочка для селекта */}
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                  ▼
+                
+                {/* Дата */}
+                <div className="relative col-span-1">
+                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-600">
+                      <Calendar size={18} />
+                    </div>
+                    <input 
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="w-full bg-emerald-50 border-2 border-transparent rounded-2xl p-4 pl-10 focus:border-emerald-500 outline-none font-bold text-gray-700 text-sm transition-all cursor-pointer"
+                    />
                 </div>
             </div>
 
@@ -263,6 +300,36 @@ export default function App() {
           </div>
         </div>
 
+        {/* АНАЛІТИКА (З'являється тільки якщо є витрати) */}
+        {topExpenses.length > 0 && (
+          <div className="bg-white p-7 rounded-[2.5rem] shadow-xl shadow-emerald-900/5 mb-10 border border-emerald-100/50">
+            <h3 className="text-gray-800 font-black text-xl mb-6 flex items-center gap-3">
+              <PieChart className="text-emerald-500" size={24} />
+              Топові витрати
+            </h3>
+            <div className="space-y-5">
+              {topExpenses.map(([cat, amt]) => {
+                const percent = Math.round((amt / totalExpenses) * 100);
+                return (
+                  <div key={cat}>
+                    <div className="flex justify-between text-sm font-bold text-gray-700 mb-2">
+                      <span>{cat}</span>
+                      <span>{amt.toLocaleString()} ₴ <span className="text-emerald-500 ml-1">({percent}%)</span></span>
+                    </div>
+                    <div className="w-full bg-emerald-50 rounded-full h-3 overflow-hidden">
+                      <div 
+                        className="bg-emerald-500 h-3 rounded-full transition-all duration-1000 ease-out" 
+                        style={{ width: `${percent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Історія */}
         <div className="mb-6 flex items-center justify-between px-2">
           <h3 className="text-gray-800 font-black text-lg flex items-center gap-2">
             <History size={20} className="text-emerald-600" />
@@ -285,7 +352,8 @@ export default function App() {
                   <div>
                     <p className="font-black text-gray-800">{t.description}</p>
                     <p className="text-[10px] font-bold text-gray-400 uppercase">
-                      {t.createdAt ? t.createdAt.toDate().toLocaleDateString('uk-UA') : 'Синхронізація...'}
+                      {/* Відображаємо обрану дату */}
+                      {t.date ? new Date(t.date).toLocaleDateString('uk-UA') : (t.createdAt ? t.createdAt.toDate().toLocaleDateString('uk-UA') : '...')}
                     </p>
                   </div>
                 </div>
