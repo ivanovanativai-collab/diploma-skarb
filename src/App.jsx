@@ -12,8 +12,6 @@ import {
   collection, 
   addDoc, 
   onSnapshot, 
-  query, 
-  orderBy, 
   serverTimestamp,
   doc,
   deleteDoc
@@ -76,17 +74,31 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, 'artifacts', 'skarbnychka', 'users', user.uid, 'transactions'),
-      orderBy('date', 'desc'), // Тепер сортуємо за обраною датою
-      orderBy('createdAt', 'desc')
-    );
+    // Спрощуємо запит до бази даних, щоб уникнути помилки індексів Firebase
+    const ref = collection(db, 'artifacts', 'skarbnychka', 'users', user.uid, 'transactions');
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(ref, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      // Сортуємо дані прямо в пам'яті браузера (JavaScript)
+      data.sort((a, b) => {
+        // Спочатку сортуємо за обраною датою (свіжіші зверху)
+        const dateA = new Date(a.date || 0).getTime();
+        const dateB = new Date(b.date || 0).getTime();
+        
+        if (dateB !== dateA) {
+          return dateB - dateA;
+        }
+        
+        // Якщо дати однакові, сортуємо за точним часом створення
+        const timeA = a.createdAt?.toMillis() || 0;
+        const timeB = b.createdAt?.toMillis() || 0;
+        return timeB - timeA;
+      });
+
       setTransactions(data);
     }, (error) => {
       console.error("Помилка Firestore:", error);
