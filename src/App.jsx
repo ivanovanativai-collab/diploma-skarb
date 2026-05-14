@@ -26,7 +26,8 @@ import {
   TrendingDown, 
   Trash2, 
   History,
-  LayoutDashboard
+  LayoutDashboard,
+  Tags
 } from 'lucide-react';
 
 // --- ВАШІ КОНФІГУРАЦІЇ FIREBASE ---
@@ -46,14 +47,21 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
+// Категорії для випадаючого списку
+const EXPENSE_CATEGORIES = ['Продукти', 'Транспорт', 'Кафе та ресторани', 'Комунальні послуги', 'Здоров\'я', 'Улюбленці', 'Одяг', 'Розваги', 'Інше'];
+const INCOME_CATEGORIES = ['Зарплата', 'Премія', 'Подарунок', 'Переказ', 'Інше'];
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  
+  // Нові стани для розумної форми
+  const [transactionType, setTransactionType] = useState('expense');
+  const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+  
   const [loading, setLoading] = useState(true);
 
-  // 1. Відстеження авторизації
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -62,11 +70,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Отримання даних у реальному часі
   useEffect(() => {
     if (!user) return;
 
-    // Згідно з правилами середовища використовуємо шлях: artifacts/appId/users/userId/collection
     const q = query(
       collection(db, 'artifacts', 'skarbnychka', 'users', user.uid, 'transactions'),
       orderBy('createdAt', 'desc')
@@ -79,11 +85,17 @@ export default function App() {
       }));
       setTransactions(data);
     }, (error) => {
-      console.error("Помилка Firestore (перевірте правила доступу):", error);
+      console.error("Помилка Firestore:", error);
     });
 
     return () => unsubscribe();
   }, [user]);
+
+  // Зміна типу транзакції (оновлює список категорій)
+  const handleTypeChange = (type) => {
+    setTransactionType(type);
+    setCategory(type === 'expense' ? EXPENSE_CATEGORIES[0] : INCOME_CATEGORIES[0]);
+  };
 
   const handleLogin = async () => {
     try {
@@ -95,24 +107,20 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
-  const addTransaction = async (type) => {
-    if (!amount || !description) return;
+  const addTransaction = async () => {
+    if (!amount || !category) return;
 
     try {
-      // Додаємо запис у базу
       await addDoc(collection(db, 'artifacts', 'skarbnychka', 'users', user.uid, 'transactions'), {
         amount: parseFloat(amount),
-        description: description,
-        type: type,
+        description: category, // Тепер опис - це обрана категорія
+        type: transactionType,
         createdAt: serverTimestamp()
       });
-      
-      // Очищуємо поля
       setAmount('');
-      setDescription('');
+      // Категорію не скидаємо для зручності швидкого вводу
     } catch (error) {
       console.error("Помилка при додаванні запису:", error);
-      alert("Не вдалося зберегти дані. Перевірте консоль (F12) або налаштування Firestore Rules.");
     }
   };
 
@@ -196,7 +204,24 @@ export default function App() {
             <PlusCircle className="text-emerald-500" size={24} />
             Нова операція
           </h3>
-          <div className="space-y-4">
+          
+          <div className="space-y-5">
+            {/* Перемикач типу */}
+            <div className="flex bg-emerald-50 p-1.5 rounded-2xl">
+              <button
+                onClick={() => handleTypeChange('expense')}
+                className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${transactionType === 'expense' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                ВИТРАТА
+              </button>
+              <button
+                onClick={() => handleTypeChange('income')}
+                className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${transactionType === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                ДОХІД
+              </button>
+            </div>
+
             <div className="relative">
                 <input 
                     type="number" 
@@ -207,27 +232,34 @@ export default function App() {
                 />
                 <span className="absolute left-5 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xl">₴</span>
             </div>
-            <input 
-                type="text" 
-                placeholder="Опис (напр. Зарплата)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full bg-emerald-50 border-2 border-transparent rounded-2xl p-5 focus:border-emerald-500 outline-none font-medium text-gray-700 transition-all"
-            />
-            <div className="grid grid-cols-2 gap-4">
-                <button 
-                onClick={() => addTransaction('income')}
-                className="bg-emerald-600 text-white py-5 rounded-2xl font-black hover:bg-emerald-700 transition-all active:scale-95 shadow-lg shadow-emerald-200"
+
+            {/* Розумний випадаючий список */}
+            <div className="relative">
+                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-emerald-600">
+                  <Tags size={20} />
+                </div>
+                <select 
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full bg-emerald-50 border-2 border-transparent rounded-2xl p-5 pl-12 focus:border-emerald-500 outline-none font-bold text-gray-700 transition-all appearance-none cursor-pointer"
                 >
-                ДОХІД
-                </button>
-                <button 
-                onClick={() => addTransaction('expense')}
-                className="bg-gray-800 text-white py-5 rounded-2xl font-black hover:bg-gray-900 transition-all active:scale-95 shadow-lg shadow-gray-200"
-                >
-                ВИТРАТА
-                </button>
+                  {transactionType === 'expense' 
+                    ? EXPENSE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)
+                    : INCOME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)
+                  }
+                </select>
+                {/* Стрілочка для селекта */}
+                <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                  ▼
+                </div>
             </div>
+
+            <button 
+              onClick={addTransaction}
+              className={`w-full text-white py-5 rounded-2xl font-black transition-all active:scale-95 shadow-lg ${transactionType === 'expense' ? 'bg-gray-800 hover:bg-gray-900 shadow-gray-200' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'}`}
+            >
+              ДОДАТИ {transactionType === 'expense' ? 'ВИТРАТУ' : 'ДОХІД'}
+            </button>
           </div>
         </div>
 
